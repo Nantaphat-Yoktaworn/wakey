@@ -20,6 +20,8 @@ pkill -f lid-sleep-daemon.sh 2>/dev/null || true
 
 echo "==> Restoring default macOS sleep behavior..."
 /usr/bin/pmset -a disablesleep 0
+/usr/bin/pmset -c womp 1
+/usr/bin/pmset -c sleep 0
 
 echo "==> Removing installed files..."
 rm -f /usr/local/bin/lid-sleep-daemon.sh

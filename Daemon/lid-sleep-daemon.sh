@@ -10,14 +10,13 @@ STATE_FILE="$STATE_DIR/enabled"
 LOG_TAG="[LidSleepDaemon]"
 
 LAST_APPLIED=""
-LAST_LID_STATE=""
-LAST_AC_STATE=""
-LAST_ENABLED_STATE=""
 
-# Ensure clean exit: revert to normal sleep behavior on stop/unload
+# Ensure clean exit: revert to factory macOS power management settings
 cleanup() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') $LOG_TAG Stopping daemon. Reverting disablesleep to 0..."
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $LOG_TAG Stopping daemon. Reverting power settings..."
     /usr/bin/pmset -a disablesleep 0
+    /usr/bin/pmset -c womp 1
+    /usr/bin/pmset -c sleep 0
     exit 0
 }
 
@@ -47,34 +46,34 @@ while true; do
         LID_CLOSED=1
     fi
 
-    # We only disable sleep when user enabled the feature AND is on AC power
+    # Keep awake only when user enabled the feature AND is on AC power
     DESIRED=0
     if [ "$ENABLED" -eq 1 ] && [ "$ON_AC" -eq 1 ]; then
         DESIRED=1
     fi
 
-    # Apply disablesleep if changed
+    # Apply power settings whenever desired state transitions
     if [ "$DESIRED" != "$LAST_APPLIED" ]; then
-        /usr/bin/pmset -a disablesleep "$DESIRED"
-        LAST_APPLIED="$DESIRED"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') $LOG_TAG Applied disablesleep=$DESIRED (Enabled=$ENABLED, AC=$ON_AC, LidClosed=$LID_CLOSED)"
-    fi
-
-    # Enforce sleep when lid is closed and sleep should NOT be prevented (DESIRED=0):
-    # This covers:
-    #   Case A: User unplugged AC while lid was already closed (ON_AC went from 1 to 0).
-    #   Case B: User closed lid while option is disabled or on battery (LID_CLOSED went from 0 to 1).
-    #   Case C: User toggled option to OFF while lid was closed on AC (ENABLED went from 1 to 0).
-    if [ "$LID_CLOSED" -eq 1 ] && [ "$DESIRED" -eq 0 ]; then
-        if [ "$LAST_LID_STATE" != "1" ] || [ "$LAST_AC_STATE" = "1" ] || [ "$LAST_ENABLED_STATE" = "1" ]; then
-            echo "$(date '+%Y-%m-%d %H:%M:%S') $LOG_TAG Lid closed with keep-awake inactive (AC=$ON_AC, Enabled=$ENABLED). Enforcing immediate sleep..."
-            /usr/bin/pmset sleepnow
+        if [ "$DESIRED" -eq 1 ]; then
+            # ACTIVE: Keep awake on AC, allow network wake (SSH)
+            /usr/bin/pmset -a disablesleep 1
+            /usr/bin/pmset -c womp 1
+            /usr/bin/pmset -c sleep 0
+        else
+            # INACTIVE: Normal sleep, disable network wake on AC so incoming SSH won't wake a sleeping Mac
+            /usr/bin/pmset -a disablesleep 0
+            /usr/bin/pmset -c womp 0
+            /usr/bin/pmset -c sleep 1
         fi
+        LAST_APPLIED="$DESIRED"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') $LOG_TAG Applied: disablesleep=$DESIRED, womp=$DESIRED, sleep=$([ "$DESIRED" -eq 1 ] && echo 0 || echo 1) (Enabled=$ENABLED, AC=$ON_AC, LidClosed=$LID_CLOSED)"
     fi
 
-    LAST_LID_STATE="$LID_CLOSED"
-    LAST_AC_STATE="$ON_AC"
-    LAST_ENABLED_STATE="$ENABLED"
+    # Enforce immediate sleep if lid is closed and keep-awake is inactive
+    if [ "$LID_CLOSED" -eq 1 ] && [ "$DESIRED" -eq 0 ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') $LOG_TAG Lid closed with keep-awake inactive (AC=$ON_AC, Enabled=$ENABLED). Enforcing immediate sleep..."
+        /usr/bin/pmset sleepnow
+    fi
 
     sleep 2
 done

@@ -361,7 +361,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         launchctl unload -w /Library/LaunchDaemons/com.lidsleepmanager.daemon.plist 2>/dev/null || true && \
         rm -f /Library/LaunchDaemons/com.lidsleepmanager.daemon.plist /usr/local/bin/lid-sleep-daemon.sh && \
         rm -rf '/Library/Application Support/LidSleepManager' && \
-        /usr/bin/pmset -a disablesleep 0
+        /usr/bin/pmset -a disablesleep 0 && \
+        /usr/bin/pmset -c womp 1 && \
+        /usr/bin/pmset -c sleep 0
         """
         
         let escapedCommand = command.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
