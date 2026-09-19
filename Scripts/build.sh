@@ -18,6 +18,12 @@ swiftc -O -framework Cocoa -framework IOKit \
 # Copy Info.plist
 cp "$DIR/App/Info.plist" "$APP_DIR/Contents/Info.plist"
 
+# Copy AppIcon if available
+if [ -f "$DIR/App/Resources/AppIcon.icns" ]; then
+    echo "==> Bundling AppIcon..."
+    cp "$DIR/App/Resources/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
+fi
+
 # Bundle daemon files into App Resources so the app is 100% self-contained
 echo "==> Bundling helper resources..."
 cp "$DIR/Daemon/lid-sleep-daemon.sh" "$APP_DIR/Contents/Resources/"
