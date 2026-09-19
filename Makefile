@@ -1,10 +1,13 @@
-.PHONY: all build install uninstall clean run
+.PHONY: all build dmg install uninstall clean run
 
-all: build
+all: dmg
 
 build:
 	@chmod +x Scripts/*.sh
 	@./Scripts/build.sh
+
+dmg: build
+	@./Scripts/create_dmg.sh
 
 install: build
 	@echo "Installing requires root privileges..."

@@ -18,4 +18,9 @@ swiftc -O -framework Cocoa -framework IOKit \
 # Copy Info.plist
 cp "$DIR/App/Info.plist" "$APP_DIR/Contents/Info.plist"
 
+# Bundle daemon files into App Resources so the app is 100% self-contained
+echo "==> Bundling helper resources..."
+cp "$DIR/Daemon/lid-sleep-daemon.sh" "$APP_DIR/Contents/Resources/"
+cp "$DIR/Daemon/com.lidsleepmanager.daemon.plist" "$APP_DIR/Contents/Resources/"
+
 echo "==> Build successful: $APP_DIR"

@@ -12,54 +12,24 @@ When on battery power, your Mac will sleep normally and safely as soon as the li
   - ⚡️ **Active (`bolt.fill`)**: Mac is plugged in; sleep is disabled when the lid is closed. SSH remains available.
   - 🔋 **Standby (`battery.100`)**: Running on battery; normal sleep behavior is active to prevent overheating in a bag.
   - 💤 **Disabled (`moon.zzz.fill`)**: Feature is manually turned off; normal sleep behavior is active at all times.
-- **Toggle without `sudo`**: The menu bar app communicates with the background daemon via a state file, so clicking the toggle doesn't prompt you for a password.
+  - ⚠️ **Warning (`exclamationmark.triangle.fill`)**: Background helper service is not running or needs installation.
+- **Drag-and-Drop Installation**: Packaged as a `.dmg` with an `/Applications` shortcut.
+- **Self-Contained Helper Installer**: Prompts to install the background service on first launch—no need to use the Terminal.
 - **Zero-impact Background Daemon**: Runs via `launchd`, reacts to power changes, and only applies power management changes when necessary.
-- **Clean Uninstaller**: One command cleanly unloads the daemon, removes all files, and restores default macOS sleep behavior.
+- **Clean Uninstallation**: Built-in option inside the app menu (and script) cleanly unloads the daemon, removes all files, and restores default macOS sleep behavior.
 
 ---
 
-## Project Structure
+## Installation via DMG (Recommended)
 
-```
-lid-sleep-manager/
-├── App/
-│   ├── main.swift             # Native macOS Swift Menu Bar app
-│   └── Info.plist             # App metadata (LSUIElement = true)
-├── Daemon/
-│   ├── lid-sleep-daemon.sh    # Background shell script managing pmset
-│   └── com.lidsleepmanager.daemon.plist  # launchd service definition
-├── Scripts/
-│   ├── build.sh               # Compiles the Swift menu bar app
-│   ├── install.sh             # Installs the app and daemon (requires sudo)
-│   └── uninstall.sh           # Uninstalls app & daemon, reverts pmset
-├── Makefile                   # Quick commands
-└── README.md
-```
-
----
-
-## Quick Start
-
-### 1. Build and Install
-Run the following from the project root:
-
-```bash
-make install
-```
-*(Or manually: `sudo ./Scripts/install.sh`)*
-
-This will:
-1. Compile the Swift app into `/Applications/LidSleepManager.app`.
-2. Install the daemon script to `/usr/local/bin/lid-sleep-daemon.sh`.
-3. Set up `/Library/Application Support/LidSleepManager/enabled`.
-4. Register and start the background service with `launchd`.
-
-### 2. Launch the Menu Bar App
-Launch the app from `/Applications`:
-```bash
-open /Applications/LidSleepManager.app
-```
-You will see the icon appear in your macOS status menu bar.
+1. Build or open the DMG:
+   ```bash
+   make dmg
+   open build/LidSleepManager.dmg
+   ```
+2. Drag **`LidSleepManager`** into the **Applications** shortcut folder.
+3. Open **`LidSleepManager`** from Applications (or Spotlight).
+4. On first launch, click **Install** when prompted to install the background service (enter your macOS password once).
 
 ---
 
@@ -79,13 +49,18 @@ You will see the icon appear in your macOS status menu bar.
    - Click the menu bar icon and uncheck **"Keep Awake on AC Power"**.
    - The icon changes to 💤 (Disabled) and the Mac will sleep even when plugged in.
 
+4. **Uninstall the Helper Service:**
+   - Click the menu bar icon and select **"Uninstall Helper Service..."**.
+   - Your Mac immediately reverts to default factory sleep behavior.
+
 ---
 
-## Uninstallation
-
-To remove everything and return your Mac to 100% factory default power behavior:
+## Development & Terminal Commands
 
 ```bash
-make uninstall
+make build       # Compile app bundle
+make dmg         # Build app and package as DMG
+make install     # Direct CLI install (requires sudo)
+make uninstall   # Direct CLI uninstall (requires sudo)
+make clean       # Remove build artifacts
 ```
-*(Or manually: `sudo ./Scripts/uninstall.sh`)*
