@@ -119,9 +119,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    // Create the minimal MacBook icon for status menu (matching app logo)
-    private func createStatusIcon(halfOpen: Bool, active: Bool, warning: Bool) -> NSImage {
-        let size = NSSize(width: 19, height: 16)
+    // Create the peeking eyes MacBook icon for status menu (matching app logo)
+    private func createStatusIcon(state: String) -> NSImage {
+        let size = NSSize(width: 20, height: 16)
         let image = NSImage(size: size)
         image.lockFocus()
         
@@ -129,49 +129,52 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSColor.black.setStroke()
         
         // Laptop Base
-        let basePath = NSBezierPath(roundedRect: NSRect(x: 1, y: 2, width: 17, height: 2.4), xRadius: 1.0, yRadius: 1.0)
+        let basePath = NSBezierPath(roundedRect: NSRect(x: 1, y: 2, width: 18, height: 2.2), xRadius: 1.0, yRadius: 1.0)
         basePath.fill()
         
-        // Subtle thumb notch
+        // Thumb notch
         NSColor.clear.setFill()
-        let notch = NSRect(x: 8, y: 3.4, width: 3, height: 1)
+        let notch = NSRect(x: 8.5, y: 3.2, width: 3, height: 1)
         notch.fill()
         NSColor.black.setFill()
         
-        if warning {
-            // Closed lid with a warning dot
-            let lidPath = NSBezierPath(roundedRect: NSRect(x: 1, y: 4.4, width: 17, height: 2.0), xRadius: 0.8, yRadius: 0.8)
+        if state == "active" {
+            // Lid slightly open (slit gap)
+            let lidPath = NSBezierPath(roundedRect: NSRect(x: 1.5, y: 8.8, width: 17, height: 2.2), xRadius: 1.0, yRadius: 1.0)
             lidPath.fill()
             
-            // Warning dot
-            let dot = NSBezierPath(ovalIn: NSRect(x: 14.5, y: 8.5, width: 3.5, height: 3.5))
-            dot.fill()
-        } else if halfOpen {
-            // Angled screen / lid
-            let lidPath = NSBezierPath()
-            lidPath.lineWidth = 2.0
-            lidPath.lineCapStyle = .round
-            lidPath.move(to: NSPoint(x: 2.5, y: 4.5))
-            lidPath.line(to: NSPoint(x: 13.5, y: 14.5))
-            lidPath.stroke()
+            // Two awake peeking eyes (dots)
+            let eye1 = NSBezierPath(ovalIn: NSRect(x: 6.8, y: 4.8, width: 2.6, height: 3.0))
+            let eye2 = NSBezierPath(ovalIn: NSRect(x: 10.6, y: 4.8, width: 2.6, height: 3.0))
+            eye1.fill()
+            eye2.fill()
             
-            if active {
-                // Active screen glow beam
-                let glowPath = NSBezierPath()
-                glowPath.lineWidth = 1.2
-                glowPath.lineCapStyle = .round
-                glowPath.move(to: NSPoint(x: 6.0, y: 5.5))
-                glowPath.line(to: NSPoint(x: 10.5, y: 9.5))
-                glowPath.stroke()
-                
-                // Small power indicator dot
-                let dot = NSBezierPath(ovalIn: NSRect(x: 15.0, y: 11.0, width: 2.8, height: 2.8))
-                dot.fill()
-            }
+        } else if state == "standby" {
+            // Lid slightly open
+            let lidPath = NSBezierPath(roundedRect: NSRect(x: 1.5, y: 8.8, width: 17, height: 2.2), xRadius: 1.0, yRadius: 1.0)
+            lidPath.fill()
+            
+            // Two sleeping eyes (horizontal slits)
+            let sleepEyes = NSBezierPath()
+            sleepEyes.lineWidth = 1.2
+            sleepEyes.lineCapStyle = .round
+            sleepEyes.move(to: NSPoint(x: 6.6, y: 6.0))
+            sleepEyes.line(to: NSPoint(x: 9.4, y: 6.0))
+            sleepEyes.move(to: NSPoint(x: 10.6, y: 6.0))
+            sleepEyes.line(to: NSPoint(x: 13.4, y: 6.0))
+            sleepEyes.stroke()
+            
+        } else if state == "disabled" {
+            // Lid completely closed flat on base
+            let lidPath = NSBezierPath(roundedRect: NSRect(x: 1, y: 4.4, width: 18, height: 2.2), xRadius: 1.0, yRadius: 1.0)
+            lidPath.fill()
+            
         } else {
-            // Flat closed lid (Disabled state)
-            let lidPath = NSBezierPath(roundedRect: NSRect(x: 1, y: 4.4, width: 17, height: 2.0), xRadius: 0.8, yRadius: 0.8)
+            // Warning: Closed lid with warning dot
+            let lidPath = NSBezierPath(roundedRect: NSRect(x: 1, y: 4.4, width: 18, height: 2.2), xRadius: 1.0, yRadius: 1.0)
             lidPath.fill()
+            let dot = NSBezierPath(ovalIn: NSRect(x: 15.0, y: 9.0, width: 3.0, height: 3.0))
+            dot.fill()
         }
         
         image.unlockFocus()
@@ -191,22 +194,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Configure Icon & Tooltip
         let tooltipText: String
+        let iconState: String
         if hasWarning {
+            iconState = "warning"
             tooltipText = "Wakey: Helper Service Not Running"
         } else if !enabled {
+            iconState = "disabled"
             tooltipText = "Wakey: Disabled (Normal Sleep)"
         } else if onAC {
+            iconState = "active"
             tooltipText = "Wakey: Active (Awake on AC with lid closed)"
         } else {
+            iconState = "standby"
             tooltipText = "Wakey: Standby (On Battery - will sleep on lid close)"
         }
         
         if let button = statusItem.button {
-            button.image = createStatusIcon(
-                halfOpen: enabled && daemonRunning,
-                active: isAwakeActive,
-                warning: hasWarning
-            )
+            button.image = createStatusIcon(state: iconState)
             button.toolTip = tooltipText
         }
         
