@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.lidsleepmanager.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/lid-sleep-daemon.sh</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/var/log/lid-sleep-manager.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/lid-sleep-manager.err</string>
+</dict>
+</plist>
