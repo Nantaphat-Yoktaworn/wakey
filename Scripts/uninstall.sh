@@ -14,6 +14,7 @@ if [ -f "$PLIST_DST" ]; then
 fi
 
 echo "==> Terminating running processes..."
+killall Wakey 2>/dev/null || true
 killall LidSleepManager 2>/dev/null || true
 pkill -f lid-sleep-daemon.sh 2>/dev/null || true
 
@@ -23,6 +24,7 @@ echo "==> Restoring default macOS sleep behavior..."
 echo "==> Removing installed files..."
 rm -f /usr/local/bin/lid-sleep-daemon.sh
 rm -rf "/Library/Application Support/LidSleepManager"
+rm -rf /Applications/Wakey.app
 rm -rf /Applications/LidSleepManager.app
 rm -f /var/log/lid-sleep-manager.log /var/log/lid-sleep-manager.err
 

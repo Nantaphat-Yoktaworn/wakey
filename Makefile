@@ -21,4 +21,4 @@ clean:
 	@rm -rf build
 
 run: build
-	@open build/LidSleepManager.app
+	@open build/Wakey.app

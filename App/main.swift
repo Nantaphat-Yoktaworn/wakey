@@ -4,24 +4,43 @@ import IOKit.ps
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var updateTimer: Timer?
+    private var powerRunLoopSource: CFRunLoopSource?
     
     private let stateDir = "/Library/Application Support/LidSleepManager"
     private let stateFile = "/Library/Application Support/LidSleepManager/enabled"
     private let daemonPlistPath = "/Library/LaunchDaemons/com.lidsleepmanager.daemon.plist"
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Create status bar item with variable length
+        // Create status bar item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         // Initial setup
         updateStatus()
         
-        // Check if daemon is installed; if not, prompt user
-        checkAndPromptDaemonInstallation()
+        // Setup immediate power-change listener using IOKit
+        setupPowerNotification()
         
-        // Periodically refresh status every 3 seconds
+        // Fallback periodic timer every 3 seconds
         updateTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
             self?.updateStatus()
+        }
+        
+        // Prompt user on first launch if helper daemon is missing
+        checkAndPromptDaemonInstallation()
+    }
+    
+    // Register for real-time power source changes
+    private func setupPowerNotification() {
+        let context = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+        if let source = IOPSNotificationCreateRunLoopSource({ ctx in
+            guard let ctx = ctx else { return }
+            let delegate = Unmanaged<AppDelegate>.fromOpaque(ctx).takeUnretainedValue()
+            DispatchQueue.main.async {
+                delegate.updateStatus()
+            }
+        }, context)?.takeRetainedValue() {
+            powerRunLoopSource = source
+            CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .defaultMode)
         }
     }
     
@@ -77,18 +96,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return process.terminationStatus == 0
     }
     
-    // Check if plist is installed
+    // Check if daemon plist is present
     private func isDaemonInstalled() -> Bool {
         return FileManager.default.fileExists(atPath: daemonPlistPath)
     }
     
-    // Prompt to install daemon on first launch
+    // Prompt to install helper on launch if not installed
     private func checkAndPromptDaemonInstallation() {
         if !isDaemonInstalled() {
             DispatchQueue.main.async { [weak self] in
                 let alert = NSAlert()
-                alert.messageText = "Install Background Service"
-                alert.informativeText = "Lid Sleep Manager requires a lightweight background helper service to manage sleep settings when the lid is closed.\n\nWould you like to install it now?"
+                alert.messageText = "Install Wakey Helper Service"
+                alert.informativeText = "Wakey requires a lightweight background helper service to keep your Mac awake when the lid is closed on AC power.\n\nWould you like to install it now?"
                 alert.alertStyle = .informational
                 alert.addButton(withTitle: "Install")
                 alert.addButton(withTitle: "Later")
@@ -100,10 +119,182 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    // Install daemon with admin privileges
+    // Create the minimal MacBook icon for status menu (matching app logo)
+    private func createStatusIcon(halfOpen: Bool, active: Bool, warning: Bool) -> NSImage {
+        let size = NSSize(width: 19, height: 16)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        
+        NSColor.black.setFill()
+        NSColor.black.setStroke()
+        
+        // Laptop Base
+        let basePath = NSBezierPath(roundedRect: NSRect(x: 1, y: 2, width: 17, height: 2.4), xRadius: 1.0, yRadius: 1.0)
+        basePath.fill()
+        
+        // Subtle thumb notch
+        NSColor.clear.setFill()
+        let notch = NSRect(x: 8, y: 3.4, width: 3, height: 1)
+        notch.fill()
+        NSColor.black.setFill()
+        
+        if warning {
+            // Closed lid with a warning dot
+            let lidPath = NSBezierPath(roundedRect: NSRect(x: 1, y: 4.4, width: 17, height: 2.0), xRadius: 0.8, yRadius: 0.8)
+            lidPath.fill()
+            
+            // Warning dot
+            let dot = NSBezierPath(ovalIn: NSRect(x: 14.5, y: 8.5, width: 3.5, height: 3.5))
+            dot.fill()
+        } else if halfOpen {
+            // Angled screen / lid
+            let lidPath = NSBezierPath()
+            lidPath.lineWidth = 2.0
+            lidPath.lineCapStyle = .round
+            lidPath.move(to: NSPoint(x: 2.5, y: 4.5))
+            lidPath.line(to: NSPoint(x: 13.5, y: 14.5))
+            lidPath.stroke()
+            
+            if active {
+                // Active screen glow beam
+                let glowPath = NSBezierPath()
+                glowPath.lineWidth = 1.2
+                glowPath.lineCapStyle = .round
+                glowPath.move(to: NSPoint(x: 6.0, y: 5.5))
+                glowPath.line(to: NSPoint(x: 10.5, y: 9.5))
+                glowPath.stroke()
+                
+                // Small power indicator dot
+                let dot = NSBezierPath(ovalIn: NSRect(x: 15.0, y: 11.0, width: 2.8, height: 2.8))
+                dot.fill()
+            }
+        } else {
+            // Flat closed lid (Disabled state)
+            let lidPath = NSBezierPath(roundedRect: NSRect(x: 1, y: 4.4, width: 17, height: 2.0), xRadius: 0.8, yRadius: 0.8)
+            lidPath.fill()
+        }
+        
+        image.unlockFocus()
+        image.isTemplate = true
+        return image
+    }
+    
+    // Refresh status bar icon and menu
+    func updateStatus() {
+        let enabled = isFeatureEnabled()
+        let onAC = isACPowerConnected()
+        let daemonRunning = isDaemonRunning()
+        let daemonInstalled = isDaemonInstalled()
+        
+        let isAwakeActive = enabled && onAC && daemonRunning
+        let hasWarning = !daemonInstalled || !daemonRunning
+        
+        // Configure Icon & Tooltip
+        let tooltipText: String
+        if hasWarning {
+            tooltipText = "Wakey: Helper Service Not Running"
+        } else if !enabled {
+            tooltipText = "Wakey: Disabled (Normal Sleep)"
+        } else if onAC {
+            tooltipText = "Wakey: Active (Awake on AC with lid closed)"
+        } else {
+            tooltipText = "Wakey: Standby (On Battery - will sleep on lid close)"
+        }
+        
+        if let button = statusItem.button {
+            button.image = createStatusIcon(
+                halfOpen: enabled && daemonRunning,
+                active: isAwakeActive,
+                warning: hasWarning
+            )
+            button.toolTip = tooltipText
+        }
+        
+        // Rebuild Menu
+        let menu = NSMenu()
+        
+        // Header Status
+        let statusTitle: String
+        if hasWarning {
+            statusTitle = "Wakey: Helper Service Stopped"
+        } else if !enabled {
+            statusTitle = "Wakey: Disabled"
+        } else if isAwakeActive {
+            statusTitle = "Wakey: Active (Awake on AC)"
+        } else {
+            statusTitle = "Wakey: Standby (Battery - Will Sleep)"
+        }
+        
+        let headerItem = NSMenuItem(title: statusTitle, action: nil, keyEquivalent: "")
+        headerItem.isEnabled = false
+        menu.addItem(headerItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        // Toggle Item
+        let toggleItem = NSMenuItem(
+            title: "Keep Awake on AC Power",
+            action: #selector(toggleFeature),
+            keyEquivalent: ""
+        )
+        toggleItem.target = self
+        toggleItem.state = (enabled && daemonRunning) ? .on : .off
+        toggleItem.isEnabled = daemonRunning
+        menu.addItem(toggleItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        // Info Items
+        let powerText = onAC ? "Power: AC Adapter Connected" : "Power: On Battery"
+        let powerItem = NSMenuItem(title: powerText, action: nil, keyEquivalent: "")
+        powerItem.isEnabled = false
+        menu.addItem(powerItem)
+        
+        let daemonText = daemonRunning ? "Helper Service: Running" : "Helper Service: Not Running"
+        let daemonItem = NSMenuItem(title: daemonText, action: nil, keyEquivalent: "")
+        daemonItem.isEnabled = false
+        menu.addItem(daemonItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        // Helper Service Actions
+        if hasWarning {
+            let installItem = NSMenuItem(
+                title: "Install / Start Helper Service...",
+                action: #selector(installDaemon),
+                keyEquivalent: ""
+            )
+            installItem.target = self
+            menu.addItem(installItem)
+        } else {
+            let uninstallItem = NSMenuItem(
+                title: "Uninstall Helper Service...",
+                action: #selector(confirmUninstallDaemon),
+                keyEquivalent: ""
+            )
+            uninstallItem.target = self
+            menu.addItem(uninstallItem)
+        }
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        // Quit
+        let quitItem = NSMenuItem(title: "Quit Wakey", action: #selector(quitApp), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
+        
+        statusItem.menu = menu
+    }
+    
+    @objc private func toggleFeature() {
+        let current = isFeatureEnabled()
+        setFeatureEnabled(!current)
+    }
+    
+    // Install helper daemon with admin privileges
     @objc private func installDaemon() {
         guard let resourcePath = Bundle.main.resourcePath else {
-            showAlert(title: "Error", message: "Resource directory not found inside application bundle.")
+            showAlert(title: "Error", message: "Resource directory not found in application bundle.")
             return
         }
         
@@ -146,17 +337,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    // Uninstall daemon with admin privileges
-    @objc private func uninstallDaemon() {
+    // Explicit confirmation dialog before uninstalling
+    @objc private func confirmUninstallDaemon() {
         let alert = NSAlert()
-        alert.messageText = "Uninstall Background Service"
-        alert.informativeText = "Are you sure you want to uninstall the background service? Default macOS sleep behavior will be restored."
-        alert.alertStyle = .warning
+        alert.messageText = "Uninstall Wakey Helper Service?"
+        alert.informativeText = "This will remove the background helper service and restore default macOS sleep behavior.\n\nYour Mac will sleep normally whenever the lid is closed.\n\nAre you sure you want to proceed?"
+        alert.alertStyle = .critical
         alert.addButton(withTitle: "Uninstall")
         alert.addButton(withTitle: "Cancel")
         
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        
+        // Show confirmation dialog
+        if alert.runModal() == .alertFirstButtonReturn {
+            executeUninstallDaemon()
+        }
+    }
+    
+    private func executeUninstallDaemon() {
         let command = """
         launchctl unload -w /Library/LaunchDaemons/com.lidsleepmanager.daemon.plist 2>/dev/null || true && \
         rm -f /Library/LaunchDaemons/com.lidsleepmanager.daemon.plist /usr/local/bin/lid-sleep-daemon.sh && \
@@ -186,120 +382,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             alert.informativeText = message
             alert.runModal()
         }
-    }
-    
-    // Refresh status bar icon and menu
-    private func updateStatus() {
-        let enabled = isFeatureEnabled()
-        let onAC = isACPowerConnected()
-        let daemonRunning = isDaemonRunning()
-        let daemonInstalled = isDaemonInstalled()
-        
-        // Configure Icon & Tooltip
-        let symbolName: String
-        let tooltipText: String
-        
-        if !daemonInstalled || !daemonRunning {
-            symbolName = "exclamationmark.triangle.fill"
-            tooltipText = "Lid Sleep: Service Not Running"
-        } else if !enabled {
-            symbolName = "moon.zzz.fill"
-            tooltipText = "Lid Sleep: Disabled (Normal Sleep)"
-        } else if onAC {
-            symbolName = "bolt.fill"
-            tooltipText = "Lid Sleep: Active (Mac will stay awake on AC)"
-        } else {
-            symbolName = "battery.100"
-            tooltipText = "Lid Sleep: Standby (On Battery, normal sleep)"
-        }
-        
-        if let button = statusItem.button {
-            if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: tooltipText) {
-                image.isTemplate = true
-                button.image = image
-            }
-            button.toolTip = tooltipText
-        }
-        
-        // Rebuild Menu
-        let menu = NSMenu()
-        
-        // Header Status
-        let statusTitle: String
-        if !daemonInstalled || !daemonRunning {
-            statusTitle = "Status: Helper Service Not Running"
-        } else if !enabled {
-            statusTitle = "Status: Disabled"
-        } else if onAC {
-            statusTitle = "Status: Active (Awake on AC)"
-        } else {
-            statusTitle = "Status: Standby (Battery - Will Sleep)"
-        }
-        
-        let headerItem = NSMenuItem(title: statusTitle, action: nil, keyEquivalent: "")
-        headerItem.isEnabled = false
-        menu.addItem(headerItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // Toggle Item
-        let toggleItem = NSMenuItem(
-            title: "Keep Awake on AC Power",
-            action: #selector(toggleFeature),
-            keyEquivalent: ""
-        )
-        toggleItem.target = self
-        toggleItem.state = (enabled && daemonRunning) ? .on : .off
-        toggleItem.isEnabled = daemonRunning
-        menu.addItem(toggleItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // Info Items
-        let powerText = onAC ? "Power Source: AC Adapter Connected" : "Power Source: Battery Power"
-        let powerItem = NSMenuItem(title: powerText, action: nil, keyEquivalent: "")
-        powerItem.isEnabled = false
-        menu.addItem(powerItem)
-        
-        let daemonText = daemonRunning ? "Background Service: Running" : "Background Service: Stopped"
-        let daemonItem = NSMenuItem(title: daemonText, action: nil, keyEquivalent: "")
-        daemonItem.isEnabled = false
-        menu.addItem(daemonItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // Helper Service Actions
-        if !daemonRunning || !daemonInstalled {
-            let installItem = NSMenuItem(
-                title: "Install / Start Helper Service...",
-                action: #selector(installDaemon),
-                keyEquivalent: ""
-            )
-            installItem.target = self
-            menu.addItem(installItem)
-        } else {
-            let uninstallItem = NSMenuItem(
-                title: "Uninstall Helper Service...",
-                action: #selector(uninstallDaemon),
-                keyEquivalent: ""
-            )
-            uninstallItem.target = self
-            menu.addItem(uninstallItem)
-        }
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // Quit
-        let quitItem = NSMenuItem(title: "Quit Lid Sleep Manager", action: #selector(quitApp), keyEquivalent: "q")
-        quitItem.target = self
-        menu.addItem(quitItem)
-        
-        statusItem.menu = menu
-    }
-    
-    @objc private func toggleFeature() {
-        let current = isFeatureEnabled()
-        setFeatureEnabled(!current)
     }
     
     @objc private func quitApp() {

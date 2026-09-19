@@ -2,9 +2,9 @@
 set -e
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_DIR="$DIR/build/LidSleepManager.app"
+APP_DIR="$DIR/build/Wakey.app"
 
-echo "==> Building LidSleepManager.app..."
+echo "==> Building Wakey.app..."
 rm -rf "$DIR/build"
 mkdir -p "$APP_DIR/Contents/MacOS"
 mkdir -p "$APP_DIR/Contents/Resources"
@@ -12,7 +12,7 @@ mkdir -p "$APP_DIR/Contents/Resources"
 # Compile Swift code
 echo "==> Compiling Swift sources..."
 swiftc -O -framework Cocoa -framework IOKit \
-    -o "$APP_DIR/Contents/MacOS/LidSleepManager" \
+    -o "$APP_DIR/Contents/MacOS/Wakey" \
     "$DIR/App/main.swift"
 
 # Copy Info.plist
