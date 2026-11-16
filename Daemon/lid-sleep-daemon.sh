@@ -28,7 +28,7 @@ while true; do
     # 1. Read user toggle (1 = enabled, 0 = disabled)
     ENABLED=0
     if [ -f "$STATE_FILE" ]; then
-        CONTENT=$(/bin/cat "$STATE_FILE" 2>/dev/null | /usr/bin/tr -d '[:space:]')
+        CONTENT=$(/usr/bin/tr -d '[:space:]' < "$STATE_FILE" 2>/dev/null)
         if [ "$CONTENT" = "1" ]; then
             ENABLED=1
         fi
@@ -66,7 +66,8 @@ while true; do
             /usr/bin/pmset -c sleep 1
         fi
         LAST_APPLIED="$DESIRED"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') $LOG_TAG Applied: disablesleep=$DESIRED, womp=$DESIRED, sleep=$([ "$DESIRED" -eq 1 ] && echo 0 || echo 1) (Enabled=$ENABLED, AC=$ON_AC, LidClosed=$LID_CLOSED)"
+        SLEEP_VAL=$((1 - DESIRED))
+        echo "$(date '+%Y-%m-%d %H:%M:%S') $LOG_TAG Applied: disablesleep=$DESIRED, womp=$DESIRED, sleep=$SLEEP_VAL (Enabled=$ENABLED, AC=$ON_AC, LidClosed=$LID_CLOSED)"
     fi
 
     # Enforce immediate sleep if lid is closed and keep-awake is inactive

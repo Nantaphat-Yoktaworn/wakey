@@ -86,14 +86,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     // Check if daemon is running
     private func isDaemonRunning() -> Bool {
-        let pipe = Pipe()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-        process.arguments = ["-f", "lid-sleep-daemon.sh"]
-        process.standardOutput = pipe
-        try? process.run()
-        process.waitUntilExit()
-        return process.terminationStatus == 0
+        process.arguments = ["-fq", "/usr/local/bin/lid-sleep-daemon.sh"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return false
+        }
     }
     
     // Check if daemon plist is present
@@ -295,6 +299,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setFeatureEnabled(!current)
     }
     
+    private func shellQuoted(_ value: String) -> String {
+        return "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    private func runPrivilegedCommand(_ command: String, failureTitle: String) {
+        let escapedCommand = command
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let appleScript = "do shell script \"\(escapedCommand)\" with administrator privileges"
+
+        var error: NSDictionary?
+        if let script = NSAppleScript(source: appleScript) {
+            script.executeAndReturnError(&error)
+            if let error = error {
+                let errorMsg = error[NSAppleScript.errorMessage] as? String ?? "Unknown error"
+                showAlert(title: failureTitle, message: errorMsg)
+            } else {
+                updateStatus()
+            }
+        }
+    }
+
     // Install helper daemon with admin privileges
     @objc private func installDaemon() {
         guard let resourcePath = Bundle.main.resourcePath else {
@@ -312,33 +338,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         let command = """
+        (launchctl unload -w /Library/LaunchDaemons/com.lidsleepmanager.daemon.plist 2>/dev/null || true) && \
         mkdir -p '/usr/local/bin' && \
         mkdir -p '/Library/Application Support/LidSleepManager' && \
         chmod 777 '/Library/Application Support/LidSleepManager' && \
         if [ ! -f '/Library/Application Support/LidSleepManager/enabled' ]; then echo '1' > '/Library/Application Support/LidSleepManager/enabled'; fi && \
         chmod 666 '/Library/Application Support/LidSleepManager/enabled' && \
-        cp '\(daemonScript)' /usr/local/bin/lid-sleep-daemon.sh && \
+        cp \(shellQuoted(daemonScript)) /usr/local/bin/lid-sleep-daemon.sh && \
         chmod +x /usr/local/bin/lid-sleep-daemon.sh && \
-        cp '\(daemonPlist)' /Library/LaunchDaemons/com.lidsleepmanager.daemon.plist && \
+        cp \(shellQuoted(daemonPlist)) /Library/LaunchDaemons/com.lidsleepmanager.daemon.plist && \
         chown root:wheel /Library/LaunchDaemons/com.lidsleepmanager.daemon.plist && \
         chmod 644 /Library/LaunchDaemons/com.lidsleepmanager.daemon.plist && \
-        launchctl unload -w /Library/LaunchDaemons/com.lidsleepmanager.daemon.plist 2>/dev/null || true && \
         launchctl load -w /Library/LaunchDaemons/com.lidsleepmanager.daemon.plist
         """
-        
-        let escapedCommand = command.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-        let appleScript = "do shell script \"\(escapedCommand)\" with administrator privileges"
-        
-        var error: NSDictionary?
-        if let script = NSAppleScript(source: appleScript) {
-            script.executeAndReturnError(&error)
-            if let error = error {
-                let errorMsg = error[NSAppleScript.errorMessage] as? String ?? "Unknown error"
-                showAlert(title: "Installation Failed", message: errorMsg)
-            } else {
-                updateStatus()
-            }
-        }
+
+        runPrivilegedCommand(command, failureTitle: "Installation Failed")
     }
     
     // Explicit confirmation dialog before uninstalling
@@ -358,27 +372,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func executeUninstallDaemon() {
         let command = """
-        launchctl unload -w /Library/LaunchDaemons/com.lidsleepmanager.daemon.plist 2>/dev/null || true && \
+        (launchctl unload -w /Library/LaunchDaemons/com.lidsleepmanager.daemon.plist 2>/dev/null || true) && \
         rm -f /Library/LaunchDaemons/com.lidsleepmanager.daemon.plist /usr/local/bin/lid-sleep-daemon.sh && \
         rm -rf '/Library/Application Support/LidSleepManager' && \
         /usr/bin/pmset -a disablesleep 0 && \
         /usr/bin/pmset -c womp 1 && \
         /usr/bin/pmset -c sleep 0
         """
-        
-        let escapedCommand = command.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-        let appleScript = "do shell script \"\(escapedCommand)\" with administrator privileges"
-        
-        var error: NSDictionary?
-        if let script = NSAppleScript(source: appleScript) {
-            script.executeAndReturnError(&error)
-            if let error = error {
-                let errorMsg = error[NSAppleScript.errorMessage] as? String ?? "Unknown error"
-                showAlert(title: "Uninstallation Failed", message: errorMsg)
-            } else {
-                updateStatus()
-            }
-        }
+
+        runPrivilegedCommand(command, failureTitle: "Uninstallation Failed")
     }
     
     private func showAlert(title: String, message: String) {

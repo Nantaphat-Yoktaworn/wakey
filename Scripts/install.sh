@@ -15,6 +15,15 @@ echo "==> Installing App to /Applications..."
 rm -rf /Applications/Wakey.app
 cp -R "$DIR/build/Wakey.app" /Applications/
 
+echo "==> Checking for existing LaunchDaemon..."
+PLIST_DST="/Library/LaunchDaemons/com.lidsleepmanager.daemon.plist"
+
+# Unload previous daemon before replacing the running script or plist
+if [ -f "$PLIST_DST" ] || launchctl list 2>/dev/null | grep -q "com.lidsleepmanager.daemon"; then
+    echo "==> Unloading existing daemon..."
+    launchctl unload -w "$PLIST_DST" 2>/dev/null || true
+fi
+
 echo "==> Installing Daemon Script..."
 mkdir -p /usr/local/bin
 cp "$DIR/Daemon/lid-sleep-daemon.sh" /usr/local/bin/lid-sleep-daemon.sh
@@ -32,14 +41,6 @@ fi
 chmod 666 "$STATE_DIR/enabled"
 
 echo "==> Installing LaunchDaemon..."
-PLIST_DST="/Library/LaunchDaemons/com.lidsleepmanager.daemon.plist"
-
-# Unload previous daemon if active
-if launchctl list | grep -q "com.lidsleepmanager.daemon"; then
-    echo "==> Unloading existing daemon..."
-    launchctl unload -w "$PLIST_DST" 2>/dev/null || true
-fi
-
 cp "$DIR/Daemon/com.lidsleepmanager.daemon.plist" "$PLIST_DST"
 chown root:wheel "$PLIST_DST"
 chmod 644 "$PLIST_DST"

@@ -16,7 +16,7 @@ fi
 echo "==> Terminating running processes..."
 killall Wakey 2>/dev/null || true
 killall LidSleepManager 2>/dev/null || true
-pkill -f lid-sleep-daemon.sh 2>/dev/null || true
+pkill -f "/usr/local/bin/lid-sleep-daemon.sh" 2>/dev/null || true
 
 echo "==> Restoring default macOS sleep behavior..."
 /usr/bin/pmset -a disablesleep 0

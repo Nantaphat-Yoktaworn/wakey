@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-verify:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Lint property lists
+        run: plutil -lint App/Info.plist Daemon/com.lidsleepmanager.daemon.plist
+
+      - name: Check shell script syntax
+        run: |
+          bash -n Daemon/lid-sleep-daemon.sh Scripts/*.sh
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck Daemon/lid-sleep-daemon.sh Scripts/*.sh
+          fi
+
+      - name: Verify Swift compilation (warnings as errors)
+        run: |
+          swiftc -O -warnings-as-errors -framework Cocoa -framework IOKit \
+            -o "$RUNNER_TEMP/Wakey" \
+            App/main.swift
+
+      - name: Build Wakey.app and Wakey.dmg
+        run: make clean && make dmg
+
+      - name: Verify app bundle and mounted DMG
+        run: |
+          test -x build/Wakey.app/Contents/MacOS/Wakey
+          plutil -lint build/Wakey.app/Contents/Info.plist
+          test -f build/Wakey.app/Contents/Resources/AppIcon.icns
+          test -f build/Wakey.app/Contents/Resources/lid-sleep-daemon.sh
+          test -f build/Wakey.app/Contents/Resources/com.lidsleepmanager.daemon.plist
+          test -f build/Wakey.dmg
+
+          MOUNT_POINT="$(mktemp -d "${RUNNER_TEMP:-/tmp}/wakey-dmg.XXXXXX")"
+          trap 'hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true; rmdir "$MOUNT_POINT" 2>/dev/null || true' EXIT
+          hdiutil attach build/Wakey.dmg -nobrowse -readonly -mountpoint "$MOUNT_POINT"
+          test -d "$MOUNT_POINT/Wakey.app"
+          test -x "$MOUNT_POINT/Wakey.app/Contents/MacOS/Wakey"
+          test -L "$MOUNT_POINT/Applications"
+
+      - name: Upload Wakey.dmg artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wakey-dmg
+          path: build/Wakey.dmg
+          retention-days: 14
